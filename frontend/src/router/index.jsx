@@ -35,7 +35,7 @@ const router = createBrowserRouter([
       { path: 'productos',   element: <Productos /> },
       { path: 'servicios',   element: <Servicios /> },
       { path: 'bitacora',    element: <ProtectedRoute roles={['admin']}><Bitacora /></ProtectedRoute> },
-      { path: 'reportes',    element: <ProtectedRoute roles={['admin','recepcionista']}><Reportes /></ProtectedRoute> },
+      { path: 'reportes',    element: <ProtectedRoute roles={['admin']}><Reportes /></ProtectedRoute> },
       { path: 'usuarios',    element: <ProtectedRoute roles={['admin']}><Usuarios /></ProtectedRoute> },
     ],
   },

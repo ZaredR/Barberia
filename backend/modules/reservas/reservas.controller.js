@@ -37,7 +37,8 @@ const updateEstado = async (req, res, next) => {
 
 const cerrar = async (req, res, next) => {
   try {
-    const data = await svc.cerrar(req.params.id, req.user.usuario_id);
+    const { items = [] } = req.body || {};
+    const data = await svc.cerrar(req.params.id, req.user.usuario_id, items);
     return ok(res, data, 'Reserva cerrada y venta generada');
   } catch (e) { next(e); }
 };

@@ -8,7 +8,7 @@ const links = [
   { to: '/app/ventas',    label: '💰 Ventas',      roles: [] },
   { to: '/app/productos', label: '📦 Productos',   roles: [] },
   { to: '/app/servicios', label: '💈 Servicios',   roles: [] },
-  { to: '/app/reportes',  label: '📈 Reportes',    roles: ['admin', 'recepcionista'] },
+  { to: '/app/reportes',  label: '📈 Reportes',    roles: ['admin'] },
   { to: '/app/bitacora',  label: '🗒️ Bitácora',   roles: ['admin'] },
   { to: '/app/usuarios',  label: '👥 Usuarios',    roles: ['admin'] },
 ]

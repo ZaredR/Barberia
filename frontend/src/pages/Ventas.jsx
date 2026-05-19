@@ -66,7 +66,7 @@ const Ventas = () => {
     setSaving(true)
     try {
       await ventasAPI.create({
-        items: items.map((i) => ({ tipo: i.tipo, id: i.id, cantidad: i.cantidad }))
+        items: items.map((i) => ({ tipo: i.tipo, id: i.id, cantidad: i.cantidad })),
       })
       setModal(false)
       setItems([])

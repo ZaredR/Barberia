@@ -53,12 +53,66 @@ const update = async (id, { fecha, hora, cliente_nombre, cliente_telefono, notas
   return rows[0];
 };
 
-const cerrar = async (reserva_id, usuario_id) => {
+const cerrar = async (reserva_id, usuario_id, items = []) => {
   const { rows } = await db.query(
     `SELECT sp_cerrar_reserva($1, $2) AS venta_id`,
     [reserva_id, usuario_id]
   );
-  return { venta_id: rows[0].venta_id };
+  const venta_id = rows[0].venta_id;
+
+  if (items.length > 0) {
+    const client = await db.getClient();
+    try {
+      await client.query('BEGIN');
+
+      // Obtener el detalle_id del servicio creado por sp_cerrar_reserva
+      const { rows: [detalleServicio] } = await client.query(
+        `SELECT detalle_id FROM detalle_ventas WHERE venta_id = $1 LIMIT 1`,
+        [venta_id]
+      );
+      if (!detalleServicio) throw { status: 500, message: 'No se encontró el detalle de la venta' };
+
+      for (const item of items) {
+        const { rows: [prod] } = await client.query(
+          `SELECT precio, stock FROM producto WHERE producto_id = $1`, [item.id]
+        );
+        if (!prod) throw { status: 400, message: `Producto ${item.id} no encontrado` };
+        if (prod.stock < item.cantidad)
+          throw { status: 400, message: `Stock insuficiente para producto ${item.id}` };
+
+        await client.query(
+          `INSERT INTO detalle_producto (detalle_id, producto_id, cantidad, precio)
+           VALUES ($1, $2, $3, $4)`,
+          [detalleServicio.detalle_id, item.id, item.cantidad, prod.precio]
+        );
+      }
+
+      // Actualizar subtotal del detalle y el total de la venta
+      await client.query(
+        `UPDATE detalle_ventas
+         SET subtotal = precio * cantidad + (
+           SELECT COALESCE(SUM(dp.precio * dp.cantidad), 0)
+           FROM detalle_producto dp WHERE dp.detalle_id = $1
+         )
+         WHERE detalle_id = $1`,
+        [detalleServicio.detalle_id]
+      );
+      await client.query(
+        `UPDATE ventas SET total = (
+          SELECT COALESCE(SUM(subtotal), 0) FROM detalle_ventas WHERE venta_id = $1
+        ) WHERE venta_id = $1`,
+        [venta_id]
+      );
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  return { venta_id };
 };
 
 const remove = async (id) => {

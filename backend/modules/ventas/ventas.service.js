@@ -48,46 +48,67 @@ const create = async (usuario_id, items = []) => {
   try {
     await client.query('BEGIN');
 
-    // Crear cabecera
     const { rows: [venta] } = await client.query(
-      `INSERT INTO ventas (fecha, total, usuario_id) VALUES (CURRENT_DATE, 0, $1) RETURNING *`,
+      `INSERT INTO ventas (fecha, total, usuario_id)
+       VALUES (CURRENT_DATE, 0, $1) RETURNING *`,
       [usuario_id]
     );
 
-    for (const item of items) {
-      if (item.tipo === 'servicio') {
-        const { rows: [svc] } = await client.query(
-          `SELECT precio FROM servicio WHERE servicio_id = $1`, [item.id]
-        );
-        if (!svc) throw { status: 400, message: `Servicio ${item.id} no encontrado` };
-        const subtotal = svc.precio * (item.cantidad || 1);
-        await client.query(
-          `INSERT INTO detalle_ventas (cantidad, precio, subtotal, venta_id, servicio_id)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [item.cantidad || 1, svc.precio, subtotal, venta.venta_id, item.id]
-        );
-      } else if (item.tipo === 'producto') {
-        const { rows: [prod] } = await client.query(
-          `SELECT precio, stock FROM producto WHERE producto_id = $1`, [item.id]
-        );
-        if (!prod) throw { status: 400, message: `Producto ${item.id} no encontrado` };
-        if (prod.stock < item.cantidad)
-          throw { status: 400, message: `Stock insuficiente para producto ${item.id}` };
+    const servicios = items.filter(i => i.tipo === 'servicio');
+    const productos  = items.filter(i => i.tipo === 'producto');
 
-        const subtotal = prod.precio * item.cantidad;
-        const { rows: [detalle] } = await client.query(
-          `INSERT INTO detalle_ventas (cantidad, precio, subtotal, venta_id)
-           VALUES ($1, $2, $3, $4) RETURNING detalle_id`,
-          [item.cantidad, prod.precio, subtotal, venta.venta_id]
-        );
-        await client.query(
-          `INSERT INTO detalle_producto (detalle_id, producto_id, cantidad, precio)
-           VALUES ($1, $2, $3, $4)`,
-          [detalle.detalle_id, item.id, item.cantidad, prod.precio]
-        );
-      }
+    if (productos.length > 0 && servicios.length === 0)
+      throw { status: 400, message: 'Se requiere al menos un servicio para agregar productos' };
+
+    let lastDetalleId = null;
+
+    for (const item of servicios) {
+      const { rows: [svc] } = await client.query(
+        `SELECT precio FROM servicio WHERE servicio_id = $1`, [item.id]
+      );
+      if (!svc) throw { status: 400, message: `Servicio ${item.id} no encontrado` };
+      const subtotal = svc.precio * (item.cantidad || 1);
+      const { rows: [detalle] } = await client.query(
+        `INSERT INTO detalle_ventas (cantidad, precio, subtotal, venta_id, servicio_id)
+         VALUES ($1, $2, $3, $4, $5) RETURNING detalle_id`,
+        [item.cantidad || 1, svc.precio, subtotal, venta.venta_id, item.id]
+      );
+      lastDetalleId = detalle.detalle_id;
     }
 
+    for (const item of productos) {
+      const { rows: [prod] } = await client.query(
+        `SELECT precio, stock FROM producto WHERE producto_id = $1`, [item.id]
+      );
+      if (!prod) throw { status: 400, message: `Producto ${item.id} no encontrado` };
+      if (prod.stock < item.cantidad)
+        throw { status: 400, message: `Stock insuficiente para producto ${item.id}` };
+
+      await client.query(
+        `INSERT INTO detalle_producto (detalle_id, producto_id, cantidad, precio)
+         VALUES ($1, $2, $3, $4)`,
+        [lastDetalleId, item.id, item.cantidad, prod.precio]
+      );
+    }
+
+    if (lastDetalleId && productos.length > 0) {
+      await client.query(
+        `UPDATE detalle_ventas
+         SET subtotal = precio * cantidad + (
+           SELECT COALESCE(SUM(dp.precio * dp.cantidad), 0)
+           FROM detalle_producto dp WHERE dp.detalle_id = $1
+         )
+         WHERE detalle_id = $1`,
+        [lastDetalleId]
+      );
+    }
+
+    await client.query(
+      `UPDATE ventas SET total = (
+        SELECT COALESCE(SUM(subtotal), 0) FROM detalle_ventas WHERE venta_id = $1
+      ) WHERE venta_id = $1`,
+      [venta.venta_id]
+    );
     await client.query('COMMIT');
     return getById(venta.venta_id);
   } catch (err) {

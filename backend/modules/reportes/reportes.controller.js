@@ -29,4 +29,20 @@ const serviciosMasSolicitados = async (req, res, next) => {
   } catch (e) { next(e); }
 };
 
-module.exports = { resumenHoy, ventasPorDia, ingresosPorBarbero, serviciosMasSolicitados };
+const productosVendidos = async (req, res, next) => {
+  try {
+    const { desde = new Date(new Date().setDate(1)).toISOString().slice(0,10),
+            hasta  = new Date().toISOString().slice(0,10) } = req.query;
+    return ok(res, await svc.productosVendidos(desde, hasta));
+  } catch (e) { next(e); }
+};
+
+const resumenPeriodo = async (req, res, next) => {
+  try {
+    const { desde = new Date(new Date().setDate(1)).toISOString().slice(0,10),
+            hasta  = new Date().toISOString().slice(0,10) } = req.query;
+    return ok(res, await svc.resumenPeriodo(desde, hasta));
+  } catch (e) { next(e); }
+};
+
+module.exports = { resumenHoy, ventasPorDia, ingresosPorBarbero, serviciosMasSolicitados, productosVendidos, resumenPeriodo };

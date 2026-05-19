@@ -26,7 +26,7 @@ export const reservasAPI = {
   create:       (data)    => api.post('/reservas', data),
   update:       (id, d)   => api.put(`/reservas/${id}`, d),
   updateEstado: (id, d)   => api.patch(`/reservas/${id}/estado`, d),
-  cerrar:       (id)      => api.post(`/reservas/${id}/cerrar`),
+  cerrar:       (id, items = []) => api.post(`/reservas/${id}/cerrar`, { items }),
   remove:       (id)      => api.delete(`/reservas/${id}`),
 }
 
@@ -68,4 +68,6 @@ export const reportesAPI = {
   ventasPorDia:          (params) => api.get('/reportes/ventas-por-dia', { params }),
   ingresosPorBarbero:    (params) => api.get('/reportes/por-barbero', { params }),
   serviciosMasSolicitados:(params)=> api.get('/reportes/servicios-top', { params }),
+  productosVendidos:     (params) => api.get('/reportes/productos-top', { params }),
+  resumenPeriodo:        (params) => api.get('/reportes/resumen-periodo', { params }),
 }

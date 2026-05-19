@@ -15,9 +15,8 @@ const Modal = ({ title, onClose, children }) => (
 )
 
 const rolColor = {
-  admin:          'bg-amber-900 text-amber-300',
-  barbero:        'bg-blue-900 text-blue-300',
-  recepcionista:  'bg-purple-900 text-purple-300',
+  admin:   'bg-amber-900 text-amber-300',
+  barbero: 'bg-blue-900 text-blue-300',
 }
 
 const Usuarios = () => {
