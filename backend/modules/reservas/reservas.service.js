@@ -19,7 +19,22 @@ const getById = async (id) => {
   return rows[0];
 };
 
+const checkConflicto = async (barbero_id, fecha, hora, excluir_id = null) => {
+  const { rows } = await db.query(
+    `SELECT r.reserva_id FROM reservas r
+     JOIN estado e ON r.estado_id = e.estado_id
+     WHERE r.barbero_id = $1
+       AND r.fecha      = $2
+       AND r.hora       = $3::time
+       AND e.descripcion_estado NOT IN ('cancelada')
+       ${excluir_id ? 'AND r.reserva_id != $4' : ''}`,
+    excluir_id ? [barbero_id, fecha, hora, excluir_id] : [barbero_id, fecha, hora]
+  );
+  if (rows.length > 0) throw { status: 409, message: 'El barbero ya tiene una cita en ese horario' };
+};
+
 const create = async ({ fecha, hora, cliente_nombre, cliente_telefono, notas, servicio_id, barbero_id }) => {
+  await checkConflicto(barbero_id, fecha, hora);
   const { rows } = await db.query(
     `SELECT sp_crear_reserva($1,$2,$3,$4,$5,$6,$7) AS reserva_id`,
     [fecha, hora, cliente_nombre, cliente_telefono, servicio_id, barbero_id, notas]
@@ -37,6 +52,15 @@ const updateEstado = async (id, estado_id) => {
 };
 
 const update = async (id, { fecha, hora, cliente_nombre, cliente_telefono, notas, servicio_id, barbero_id }) => {
+  if (fecha || hora || barbero_id) {
+    const current = await getById(id);
+    await checkConflicto(
+      barbero_id  ?? current.barbero_id,
+      fecha       ?? current.fecha,
+      hora        ?? current.hora?.slice(0, 5),
+      id
+    );
+  }
   const { rows } = await db.query(
     `UPDATE reservas
      SET fecha            = COALESCE($1, fecha),

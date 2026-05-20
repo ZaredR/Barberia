@@ -1,7 +1,17 @@
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { reservasAPI, serviciosAPI, usuariosAPI } from '../api'
+import useAuthStore from '../store/auth.store'
 import dayjs from 'dayjs'
+
+// Slots de 11:00 a 20:00 cada 30 minutos
+const SLOTS = []
+for (let h = 11; h <= 20; h++) {
+  for (let m = 0; m < 60; m += 30) {
+    if (h === 20 && m > 0) break
+    SLOTS.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
+  }
+}
 
 const estadoBadge = {
   pendiente:  'bg-yellow-900 text-yellow-300',
@@ -22,7 +32,12 @@ const Modal = ({ title, onClose, children }) => (
   </div>
 )
 
+const inputCls = 'w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400'
+
 const Reservas = () => {
+  const user    = useAuthStore((s) => s.user)
+  const isAdmin = user?.rol === 'admin'
+
   const [reservas,  setReservas]  = useState([])
   const [servicios, setServicios] = useState([])
   const [barberos,  setBarberos]  = useState([])
@@ -31,14 +46,17 @@ const Reservas = () => {
   const [editing,   setEditing]   = useState(null)
   const [filtros,   setFiltros]   = useState({ fecha: '', estado_id: '' })
   const [loading,   setLoading]   = useState(false)
+  const [ocupadas,  setOcupadas]  = useState(new Set())
 
-  const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm()
+  const { register, handleSubmit, reset, watch, formState: { isSubmitting } } = useForm()
+  const watchFecha   = watch('fecha')
+  const watchBarbero = watch('barbero_id')
 
   const fetchAll = async () => {
     setLoading(true)
     try {
       const params = {}
-      if (filtros.fecha)    params.fecha    = filtros.fecha
+      if (filtros.fecha)     params.fecha     = filtros.fecha
       if (filtros.estado_id) params.estado_id = filtros.estado_id
       const { data } = await reservasAPI.getAll(params)
       setReservas(data.data)
@@ -48,24 +66,56 @@ const Reservas = () => {
 
   useEffect(() => {
     fetchAll()
-    Promise.all([
-      serviciosAPI.getAll(),
-      usuariosAPI.getAll(),
-      reservasAPI.getEstados(),
-    ]).then(([s, u, e]) => {
-      setServicios(s.data.data)
-      setBarberos(u.data.data.filter((u) => u.rol === 'barbero'))
-      setEstados(e.data.data)
-    })
+    const loadCatalogos = async () => {
+      try {
+        const [s, e] = await Promise.all([
+          serviciosAPI.getAll(),
+          reservasAPI.getEstados(),
+        ])
+        setServicios(s.data.data)
+        setEstados(e.data.data)
+      } catch (_) {}
+
+      if (isAdmin) {
+        try {
+          const u = await usuariosAPI.getAll()
+          setBarberos(u.data.data.filter((b) => b.rol === 'barbero'))
+        } catch (_) {}
+      }
+    }
+    loadCatalogos()
   }, [])
 
   useEffect(() => { fetchAll() }, [filtros])
 
-  const openCreate = () => { setEditing(null); reset({}); setModal(true) }
-  const openEdit   = (r)  => {
+  // Cargar horarios ocupados cuando cambia fecha o barbero (solo con modal abierto)
+  useEffect(() => {
+    if (!modal) return
+    const barberoId = isAdmin ? watchBarbero : user?.usuario_id
+    if (!watchFecha || !barberoId) { setOcupadas(new Set()); return }
+
+    reservasAPI.getAll({ fecha: watchFecha, barbero_id: barberoId })
+      .then(({ data }) => {
+        const set = new Set(
+          (data.data || [])
+            .filter(r => r.estado !== 'cancelada' && (!editing || r.reserva_id !== editing.reserva_id))
+            .map(r => r.hora?.slice(0, 5))
+        )
+        setOcupadas(set)
+      })
+      .catch(() => setOcupadas(new Set()))
+  }, [watchFecha, watchBarbero, modal])
+
+  const openCreate = () => {
+    setEditing(null)
+    reset({})
+    setModal(true)
+  }
+
+  const openEdit = (r) => {
     setEditing(r)
     reset({
-      fecha: r.fecha, hora: r.hora?.slice(0,5),
+      fecha: r.fecha, hora: r.hora?.slice(0, 5),
       cliente_nombre: r.cliente_nombre, cliente_telefono: r.cliente_telefono,
       notas: r.notas, servicio_id: r.servicio_id, barbero_id: r.barbero_id,
     })
@@ -74,10 +124,12 @@ const Reservas = () => {
 
   const onSubmit = async (data) => {
     try {
+      const payload = { ...data }
+      if (!isAdmin) payload.barbero_id = user?.usuario_id
       if (editing) {
-        await reservasAPI.update(editing.reserva_id, data)
+        await reservasAPI.update(editing.reserva_id, payload)
       } else {
-        await reservasAPI.create(data)
+        await reservasAPI.create(payload)
       }
       setModal(false)
       fetchAll()
@@ -134,7 +186,7 @@ const Reservas = () => {
               <tr key={r.reserva_id} className="hover:bg-gray-800/50 transition">
                 <td className="px-4 py-3 text-gray-500">{r.reserva_id}</td>
                 <td className="px-4 py-3 text-white">{dayjs(r.fecha).format('DD/MM/YY')}</td>
-                <td className="px-4 py-3 text-amber-400">{r.hora?.slice(0,5)}</td>
+                <td className="px-4 py-3 text-amber-400">{r.hora?.slice(0, 5)}</td>
                 <td className="px-4 py-3 text-white">
                   <p>{r.cliente_nombre}</p>
                   <p className="text-xs text-gray-500">{r.cliente_telefono}</p>
@@ -169,49 +221,60 @@ const Reservas = () => {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-gray-400">Fecha</label>
-                <input type="date" {...register('fecha', { required: true })}
-                  className="w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400" />
+                <input type="date" {...register('fecha', { required: true })} className={inputCls} />
               </div>
               <div>
                 <label className="text-xs text-gray-400">Hora</label>
-                <input type="time" {...register('hora', { required: true })}
-                  className="w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400" />
+                <select {...register('hora', { required: true })} className={inputCls}>
+                  <option value="">Seleccionar...</option>
+                  {SLOTS.map(slot => (
+                    <option key={slot} value={slot} disabled={ocupadas.has(slot)}>
+                      {slot}{ocupadas.has(slot) ? ' — Ocupado' : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             <div>
               <label className="text-xs text-gray-400">Nombre del cliente</label>
-              <input {...register('cliente_nombre', { required: true })}
-                className="w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400" />
+              <input {...register('cliente_nombre', { required: true })} className={inputCls} />
             </div>
             <div>
               <label className="text-xs text-gray-400">Teléfono</label>
-              <input {...register('cliente_telefono', { required: true })}
-                className="w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400" />
+              <input {...register('cliente_telefono', { required: true })} className={inputCls} />
             </div>
             <div>
               <label className="text-xs text-gray-400">Servicio</label>
-              <select {...register('servicio_id', { required: true })}
-                className="w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400">
+              <select {...register('servicio_id', { required: true })} className={inputCls}>
                 <option value="">Seleccionar...</option>
                 {servicios.map((s) => (
                   <option key={s.servicio_id} value={s.servicio_id}>{s.tipo_servicio} — ${s.precio}</option>
                 ))}
               </select>
             </div>
-            <div>
-              <label className="text-xs text-gray-400">Barbero</label>
-              <select {...register('barbero_id', { required: true })}
-                className="w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400">
-                <option value="">Seleccionar...</option>
-                {barberos.map((b) => (
-                  <option key={b.usuario_id} value={b.usuario_id}>{b.nombre}</option>
-                ))}
-              </select>
-            </div>
+
+            {isAdmin ? (
+              <div>
+                <label className="text-xs text-gray-400">Barbero</label>
+                <select {...register('barbero_id', { required: true })} className={inputCls}>
+                  <option value="">Seleccionar...</option>
+                  {barberos.map((b) => (
+                    <option key={b.usuario_id} value={b.usuario_id}>{b.nombre}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div>
+                <label className="text-xs text-gray-400">Barbero</label>
+                <p className="w-full mt-1 bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-2 text-gray-300 text-sm">
+                  {user?.nombre}
+                </p>
+              </div>
+            )}
+
             <div>
               <label className="text-xs text-gray-400">Notas (opcional)</label>
-              <textarea {...register('notas')} rows={2}
-                className="w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400 resize-none" />
+              <textarea {...register('notas')} rows={2} className={`${inputCls} resize-none`} />
             </div>
             <div className="flex gap-3 pt-2">
               <button type="button" onClick={() => setModal(false)}

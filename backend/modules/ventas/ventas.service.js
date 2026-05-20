@@ -1,11 +1,25 @@
 const db = require('../../config/db');
 
 const getAll = async ({ fecha, usuario_id } = {}) => {
-  let sql = `SELECT * FROM v_reporte_ventas WHERE 1=1`;
+  let sql = `
+    SELECT v.venta_id, v.fecha, v.total,
+           u.nombre  AS cajero,
+           u.usuario_id AS cajero_id,
+           (
+             (SELECT COUNT(*)::int FROM detalle_ventas dv
+              WHERE dv.venta_id = v.venta_id AND dv.servicio_id IS NOT NULL)
+             +
+             (SELECT COUNT(*)::int FROM detalle_producto dp
+              JOIN detalle_ventas dv2 ON dp.detalle_id = dv2.detalle_id
+              WHERE dv2.venta_id = v.venta_id)
+           ) AS num_items
+    FROM ventas v
+    JOIN usuario u ON v.usuario_id = u.usuario_id
+    WHERE 1=1`;
   const params = [];
-  if (fecha)      { params.push(fecha);      sql += ` AND fecha = $${params.length}`; }
-  if (usuario_id) { params.push(usuario_id); sql += ` AND cajero_id = $${params.length}`; }
-  sql += ` ORDER BY venta_id DESC`;
+  if (fecha)      { params.push(fecha);      sql += ` AND v.fecha = $${params.length}`; }
+  if (usuario_id) { params.push(usuario_id); sql += ` AND v.usuario_id = $${params.length}`; }
+  sql += ` ORDER BY v.venta_id DESC`;
   const { rows } = await db.query(sql, params);
   return rows;
 };
@@ -57,8 +71,8 @@ const create = async (usuario_id, items = []) => {
     const servicios = items.filter(i => i.tipo === 'servicio');
     const productos  = items.filter(i => i.tipo === 'producto');
 
-    if (productos.length > 0 && servicios.length === 0)
-      throw { status: 400, message: 'Se requiere al menos un servicio para agregar productos' };
+    if (items.length === 0)
+      throw { status: 400, message: 'La venta debe tener al menos un item' };
 
     let lastDetalleId = null;
 
@@ -72,6 +86,16 @@ const create = async (usuario_id, items = []) => {
         `INSERT INTO detalle_ventas (cantidad, precio, subtotal, venta_id, servicio_id)
          VALUES ($1, $2, $3, $4, $5) RETURNING detalle_id`,
         [item.cantidad || 1, svc.precio, subtotal, venta.venta_id, item.id]
+      );
+      lastDetalleId = detalle.detalle_id;
+    }
+
+    // Venta solo de productos: crear fila contenedora sin servicio
+    if (productos.length > 0 && servicios.length === 0) {
+      const { rows: [detalle] } = await client.query(
+        `INSERT INTO detalle_ventas (cantidad, precio, subtotal, venta_id, servicio_id)
+         VALUES (1, 0, 0, $1, NULL) RETURNING detalle_id`,
+        [venta.venta_id]
       );
       lastDetalleId = detalle.detalle_id;
     }

@@ -15,14 +15,16 @@ const Modal = ({ title, onClose, children }) => (
 )
 
 const Ventas = () => {
-  const [ventas,    setVentas]    = useState([])
-  const [servicios, setServicios] = useState([])
-  const [productos, setProductos] = useState([])
-  const [modal,     setModal]     = useState(false)
-  const [items,     setItems]     = useState([])
-  const [loading,   setLoading]   = useState(false)
-  const [saving,    setSaving]    = useState(false)
+  const [ventas,      setVentas]      = useState([])
+  const [servicios,   setServicios]   = useState([])
+  const [productos,   setProductos]   = useState([])
+  const [modal,       setModal]       = useState(false)
+  const [items,       setItems]       = useState([])
+  const [loading,     setLoading]     = useState(false)
+  const [saving,      setSaving]      = useState(false)
   const [fechaFiltro, setFechaFiltro] = useState('')
+  const [detalle,     setDetalle]     = useState(null)
+  const [loadingDet,  setLoadingDet]  = useState(false)
 
   const fetchVentas = async () => {
     setLoading(true)
@@ -58,7 +60,6 @@ const Ventas = () => {
   }
 
   const removeItem = (idx) => setItems(items.filter((_, i) => i !== idx))
-
   const total = items.reduce((s, i) => s + i.precio * i.cantidad, 0)
 
   const onGuardar = async () => {
@@ -73,6 +74,16 @@ const Ventas = () => {
       fetchVentas()
     } catch (e) { alert(e.response?.data?.message || 'Error') }
     setSaving(false)
+  }
+
+  const verDetalle = async (id) => {
+    setDetalle(null)
+    setLoadingDet(true)
+    try {
+      const { data } = await ventasAPI.getById(id)
+      setDetalle(data.data)
+    } catch (_) {}
+    setLoadingDet(false)
   }
 
   return (
@@ -99,7 +110,7 @@ const Ventas = () => {
         <table className="w-full text-sm">
           <thead className="bg-gray-800 text-gray-400 text-xs uppercase">
             <tr>
-              {['#','Fecha','Cliente','Cajero','Items','Total'].map((h) => (
+              {['#','Fecha','Cajero','Items','Total','Acciones'].map((h) => (
                 <th key={h} className="px-4 py-3 text-left">{h}</th>
               ))}
             </tr>
@@ -113,20 +124,25 @@ const Ventas = () => {
               <tr key={v.venta_id} className="hover:bg-gray-800/50 transition">
                 <td className="px-4 py-3 text-gray-500">{v.venta_id}</td>
                 <td className="px-4 py-3 text-white">{dayjs(v.fecha).format('DD/MM/YY')}</td>
-                <td className="px-4 py-3 text-gray-300">{v.cliente_nombre || '—'}</td>
                 <td className="px-4 py-3 text-gray-300">{v.cajero}</td>
                 <td className="px-4 py-3 text-gray-400">{v.num_items}</td>
                 <td className="px-4 py-3 text-amber-400 font-semibold">${Number(v.total).toFixed(2)}</td>
+                <td className="px-4 py-3">
+                  <button onClick={() => verDetalle(v.venta_id)}
+                    className="text-xs text-blue-400 hover:text-blue-300 transition">
+                    Ver detalle
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
+      {/* Modal nueva venta */}
       {modal && (
         <Modal title="Nueva venta directa" onClose={() => setModal(false)}>
           <div className="space-y-4">
-            {/* Agregar servicio */}
             <div>
               <label className="text-xs text-gray-400 mb-1 block">Agregar servicio</label>
               <select onChange={(e) => { addItem('servicio', e.target.value); e.target.value = '' }}
@@ -140,7 +156,6 @@ const Ventas = () => {
               </select>
             </div>
 
-            {/* Agregar producto */}
             <div>
               <label className="text-xs text-gray-400 mb-1 block">Agregar producto</label>
               <select onChange={(e) => { addItem('producto', e.target.value); e.target.value = '' }}
@@ -154,7 +169,6 @@ const Ventas = () => {
               </select>
             </div>
 
-            {/* Items en carrito */}
             {items.length > 0 && (
               <div className="bg-gray-800 rounded-lg divide-y divide-gray-700">
                 {items.map((item, idx) => (
@@ -199,6 +213,70 @@ const Ventas = () => {
               </button>
             </div>
           </div>
+        </Modal>
+      )}
+
+      {/* Modal detalle de venta */}
+      {(detalle || loadingDet) && (
+        <Modal
+          title={detalle ? `Detalle — Venta #${detalle.venta_id}` : 'Cargando...'}
+          onClose={() => { setDetalle(null); setLoadingDet(false) }}
+        >
+          {loadingDet ? (
+            <p className="text-gray-400 text-sm text-center py-6 animate-pulse">Cargando...</p>
+          ) : detalle && (
+            <div className="space-y-4">
+              <div className="flex justify-between text-xs text-gray-400">
+                <span>{dayjs(detalle.fecha).format('DD/MM/YYYY')}</span>
+                <span>Cajero: <span className="text-gray-200">{detalle.cajero}</span></span>
+              </div>
+
+              {/* Servicios */}
+              {detalle.detalles?.filter(d => d.servicio_id).length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-500 uppercase mb-2">Servicios</p>
+                  <div className="bg-gray-800 rounded-lg divide-y divide-gray-700">
+                    {detalle.detalles.filter(d => d.servicio_id).map((d) => (
+                      <div key={d.detalle_id} className="flex justify-between px-3 py-2">
+                        <div>
+                          <p className="text-sm text-white">{d.tipo_servicio}</p>
+                          <p className="text-xs text-gray-400">x{d.cantidad} × ${Number(d.precio).toFixed(2)}</p>
+                        </div>
+                        <p className="text-amber-400 text-sm font-semibold">
+                          ${Number(d.subtotal).toFixed(2)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Productos */}
+              {detalle.productos?.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-500 uppercase mb-2">Productos</p>
+                  <div className="bg-gray-800 rounded-lg divide-y divide-gray-700">
+                    {detalle.productos.map((p, i) => (
+                      <div key={i} className="flex justify-between px-3 py-2">
+                        <div>
+                          <p className="text-sm text-white">{p.producto_nombre}</p>
+                          <p className="text-xs text-gray-400">x{p.cantidad} × ${Number(p.precio).toFixed(2)}</p>
+                        </div>
+                        <p className="text-blue-400 text-sm font-semibold">
+                          ${(Number(p.precio) * Number(p.cantidad)).toFixed(2)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-between items-center pt-2 border-t border-gray-700">
+                <span className="text-white font-semibold">Total</span>
+                <span className="text-amber-400 text-lg font-bold">${Number(detalle.total).toFixed(2)}</span>
+              </div>
+            </div>
+          )}
         </Modal>
       )}
     </div>
