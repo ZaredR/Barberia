@@ -5,7 +5,7 @@ const getAll = async ({ fecha, barbero_id, estado_id } = {}) => {
   const params = [];
 
   if (fecha) { params.push(fecha); sql += ` AND fecha = $${params.length}`; }
-  if (barbero_id) { params.push(barbero_id); sql += ` AND barbero_id = $${params.length}`; }
+  if (barbero_id) { params.push(barbero_id); sql += ` AND reserva_id IN (SELECT reserva_id FROM reservas WHERE barbero_id = $${params.length})`; }
   if (estado_id)  { params.push(estado_id);  sql += ` AND estado_id  = $${params.length}`; }
 
   sql += ` ORDER BY fecha, hora`;

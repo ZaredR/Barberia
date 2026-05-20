@@ -77,7 +77,7 @@ const Usuarios = () => {
         <table className="w-full text-sm">
           <thead className="bg-gray-800 text-gray-400 text-xs uppercase">
             <tr>
-              {['Nombre','Username','Email','Rol','Comisión','Estado','Acciones'].map((h) => (
+              {['Nombre','Username','Email','Rol','% Ganancia','Estado','Acciones'].map((h) => (
                 <th key={h} className="px-4 py-3 text-left">{h}</th>
               ))}
             </tr>
@@ -145,7 +145,7 @@ const Usuarios = () => {
                 </select>
               </div>
               <div>
-                <label className="text-xs text-gray-400">Comisión %</label>
+                <label className="text-xs text-gray-400">% Ganancia del barbero</label>
                 <input type="number" step="0.01" min="0" max="100"
                   {...register('porcentaje_ganancia')} className={inputCls} defaultValue={0} />
               </div>

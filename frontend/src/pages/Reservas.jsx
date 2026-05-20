@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { reservasAPI, serviciosAPI, usuariosAPI } from '../api'
 import useAuthStore from '../store/auth.store'
 import dayjs from 'dayjs'
@@ -46,11 +46,12 @@ const Reservas = () => {
   const [editing,   setEditing]   = useState(null)
   const [filtros,   setFiltros]   = useState({ fecha: '', estado_id: '' })
   const [loading,   setLoading]   = useState(false)
-  const [ocupadas,  setOcupadas]  = useState(new Set())
+  const [ocupadas,      setOcupadas]      = useState(new Set())
+  const [fechaModal,    setFechaModal]    = useState('')
+  const [barberoModal,  setBarberoModal]  = useState('')
+  const [loadingHoras,  setLoadingHoras]  = useState(false)
 
-  const { register, handleSubmit, reset, watch, formState: { isSubmitting } } = useForm()
-  const watchFecha   = watch('fecha')
-  const watchBarbero = watch('barbero_id')
+  const { register, handleSubmit, reset, setValue, control, formState: { isSubmitting } } = useForm()
 
   const fetchAll = async () => {
     setLoading(true)
@@ -88,37 +89,50 @@ const Reservas = () => {
 
   useEffect(() => { fetchAll() }, [filtros])
 
-  // Cargar horarios ocupados cuando cambia fecha o barbero (solo con modal abierto)
-  useEffect(() => {
-    if (!modal) return
-    const barberoId = isAdmin ? watchBarbero : user?.usuario_id
-    if (!watchFecha || !barberoId) { setOcupadas(new Set()); return }
-
-    reservasAPI.getAll({ fecha: watchFecha, barbero_id: barberoId })
-      .then(({ data }) => {
-        const set = new Set(
-          (data.data || [])
-            .filter(r => r.estado !== 'cancelada' && (!editing || r.reserva_id !== editing.reserva_id))
-            .map(r => r.hora?.slice(0, 5))
-        )
-        setOcupadas(set)
-      })
-      .catch(() => setOcupadas(new Set()))
-  }, [watchFecha, watchBarbero, modal])
+  const cargarOcupadas = async (fecha, barberoId, excluirId = null) => {
+    if (!fecha || !barberoId) { setOcupadas(new Set()); return }
+    setLoadingHoras(true)
+    try {
+      const { data } = await reservasAPI.getAll({ fecha })
+      const set = new Set(
+        (data.data || [])
+          .filter(r =>
+            r.estado !== 'cancelada' &&
+            String(r.barbero_id) === String(barberoId) &&
+            (!excluirId || r.reserva_id !== excluirId)
+          )
+          .map(r => r.hora?.slice(0, 5))
+      )
+      setOcupadas(set)
+    } catch { setOcupadas(new Set()) }
+    finally { setLoadingHoras(false) }
+  }
 
   const openCreate = () => {
     setEditing(null)
+    setFechaModal('')
+    setBarberoModal('')
+    setOcupadas(new Set())
     reset({})
     setModal(true)
   }
 
   const openEdit = (r) => {
+    const f = dayjs(r.fecha).format('YYYY-MM-DD')
+    const barberoId = isAdmin ? r.barbero_id : user?.usuario_id
     setEditing(r)
+    setFechaModal(f)
+    if (isAdmin) setBarberoModal(String(r.barbero_id))
     reset({
-      fecha: r.fecha, hora: r.hora?.slice(0, 5),
-      cliente_nombre: r.cliente_nombre, cliente_telefono: r.cliente_telefono,
-      notas: r.notas, servicio_id: r.servicio_id, barbero_id: r.barbero_id,
+      fecha:            f,
+      hora:             r.hora?.slice(0, 5),
+      cliente_nombre:   r.cliente_nombre,
+      cliente_telefono: r.cliente_telefono,
+      notas:            r.notas ?? '',
+      servicio_id:      String(r.servicio_id),
+      barbero_id:       isAdmin ? String(r.barbero_id) : String(user?.usuario_id),
     })
+    cargarOcupadas(f, barberoId, r.reserva_id)
     setModal(true)
   }
 
@@ -218,23 +232,35 @@ const Reservas = () => {
       {modal && (
         <Modal title={editing ? 'Editar reserva' : 'Nueva reserva'} onClose={() => setModal(false)}>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-gray-400">Fecha</label>
-                <input type="date" {...register('fecha', { required: true })} className={inputCls} />
-              </div>
-              <div>
-                <label className="text-xs text-gray-400">Hora</label>
-                <select {...register('hora', { required: true })} className={inputCls}>
-                  <option value="">Seleccionar...</option>
-                  {SLOTS.map(slot => (
-                    <option key={slot} value={slot} disabled={ocupadas.has(slot)}>
-                      {slot}{ocupadas.has(slot) ? ' — Ocupado' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div>
+              <label className="text-xs text-gray-400">Fecha</label>
+              <input type="date" {...register('fecha', { required: true })}
+                onChange={(e) => {
+                  const f = e.target.value
+                  setValue('fecha', f)
+                  setFechaModal(f)
+                  setValue('hora', '')
+                  const barberoId = isAdmin ? barberoModal : user?.usuario_id
+                  cargarOcupadas(f, barberoId, editing?.reserva_id ?? null)
+                }}
+                className={inputCls} />
             </div>
+
+            {fechaModal && (
+              <div>
+                <label className="text-xs text-gray-400">Hora disponible</label>
+                {loadingHoras ? (
+                  <p className="mt-1 text-sm text-gray-500 animate-pulse">Cargando horarios...</p>
+                ) : (
+                  <select {...register('hora', { required: true })} className={inputCls}>
+                    <option value="">Seleccionar...</option>
+                    {SLOTS.filter(slot => !ocupadas.has(slot)).map(slot => (
+                      <option key={slot} value={slot}>{slot}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
             <div>
               <label className="text-xs text-gray-400">Nombre del cliente</label>
               <input {...register('cliente_nombre', { required: true })} className={inputCls} />
@@ -245,18 +271,34 @@ const Reservas = () => {
             </div>
             <div>
               <label className="text-xs text-gray-400">Servicio</label>
-              <select {...register('servicio_id', { required: true })} className={inputCls}>
-                <option value="">Seleccionar...</option>
-                {servicios.map((s) => (
-                  <option key={s.servicio_id} value={s.servicio_id}>{s.tipo_servicio} — ${s.precio}</option>
-                ))}
-              </select>
+              <Controller
+                name="servicio_id"
+                control={control}
+                rules={{ required: true }}
+                render={({ field }) => (
+                  <select {...field} className={inputCls}>
+                    <option value="">Seleccionar...</option>
+                    {servicios.map((s) => (
+                      <option key={s.servicio_id} value={String(s.servicio_id)}>
+                        {s.tipo_servicio} — ${s.precio}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              />
             </div>
 
             {isAdmin ? (
               <div>
                 <label className="text-xs text-gray-400">Barbero</label>
-                <select {...register('barbero_id', { required: true })} className={inputCls}>
+                <select {...register('barbero_id', { required: true })}
+                  onChange={(e) => {
+                    const bid = e.target.value
+                    setValue('barbero_id', bid)
+                    setBarberoModal(bid)
+                    cargarOcupadas(fechaModal, bid, editing?.reserva_id ?? null)
+                  }}
+                  className={inputCls}>
                   <option value="">Seleccionar...</option>
                   {barberos.map((b) => (
                     <option key={b.usuario_id} value={b.usuario_id}>{b.nombre}</option>

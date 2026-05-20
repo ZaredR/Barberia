@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { serviciosAPI } from '../api'
+import useAuthStore from '../store/auth.store'
 
 const Modal = ({ title, onClose, children }) => (
   <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
@@ -15,6 +16,8 @@ const Modal = ({ title, onClose, children }) => (
 )
 
 const Servicios = () => {
+  const isAdmin = useAuthStore((s) => s.user?.rol === 'admin')
+
   const [servicios, setServicios] = useState([])
   const [modal,     setModal]     = useState(false)
   const [editing,   setEditing]   = useState(null)
@@ -50,10 +53,12 @@ const Servicios = () => {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white">Servicios</h2>
-        <button onClick={openCreate}
-          className="bg-amber-500 hover:bg-amber-400 text-gray-900 font-semibold px-4 py-2 rounded-lg text-sm transition">
-          + Nuevo servicio
-        </button>
+        {isAdmin && (
+          <button onClick={openCreate}
+            className="bg-amber-500 hover:bg-amber-400 text-gray-900 font-semibold px-4 py-2 rounded-lg text-sm transition">
+            + Nuevo servicio
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -63,12 +68,14 @@ const Servicios = () => {
               <p className="font-semibold text-white">💈 {s.tipo_servicio}</p>
               <p className="text-amber-400 font-bold mt-1">${Number(s.precio).toFixed(2)}</p>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <button onClick={() => openEdit(s)}
-                className="text-xs text-blue-400 hover:text-blue-300 transition">Editar</button>
-              <button onClick={() => onDelete(s.servicio_id)}
-                className="text-xs text-red-400 hover:text-red-300 transition">Desactivar</button>
-            </div>
+            {isAdmin && (
+              <div className="flex flex-col gap-1.5">
+                <button onClick={() => openEdit(s)}
+                  className="text-xs text-blue-400 hover:text-blue-300 transition">Editar</button>
+                <button onClick={() => onDelete(s.servicio_id)}
+                  className="text-xs text-red-400 hover:text-red-300 transition">Desactivar</button>
+              </div>
+            )}
           </div>
         ))}
       </div>

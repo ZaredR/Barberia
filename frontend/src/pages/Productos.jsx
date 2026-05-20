@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { productosAPI } from '../api'
+import useAuthStore from '../store/auth.store'
 
 const Modal = ({ title, onClose, children }) => (
   <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
@@ -15,6 +16,8 @@ const Modal = ({ title, onClose, children }) => (
 )
 
 const Productos = () => {
+  const isAdmin = useAuthStore((s) => s.user?.rol === 'admin')
+
   const [productos,  setProductos]  = useState([])
   const [modal,      setModal]      = useState(false)
   const [modalStock, setModalStock] = useState(null)
@@ -72,10 +75,12 @@ const Productos = () => {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white">Productos / Inventario</h2>
-        <button onClick={openCreate}
-          className="bg-amber-500 hover:bg-amber-400 text-gray-900 font-semibold px-4 py-2 rounded-lg text-sm transition">
-          + Nuevo producto
-        </button>
+        {isAdmin && (
+          <button onClick={openCreate}
+            className="bg-amber-500 hover:bg-amber-400 text-gray-900 font-semibold px-4 py-2 rounded-lg text-sm transition">
+            + Nuevo producto
+          </button>
+        )}
       </div>
 
       <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
@@ -111,20 +116,22 @@ const Productos = () => {
                 </p>
                 <p className="text-xs text-gray-500">Mín: {p.stock_min}</p>
               </div>
-              <div className="flex flex-col gap-1.5">
-                <button onClick={() => { setModalStock(p); resetStock() }}
-                  className="text-xs bg-blue-800 hover:bg-blue-700 text-blue-200 px-3 py-1 rounded-lg transition">
-                  Ajustar stock
-                </button>
-                <button onClick={() => openEdit(p)}
-                  className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 px-3 py-1 rounded-lg transition">
-                  Editar
-                </button>
-                <button onClick={() => onDelete(p.producto_id)}
-                  className="text-xs text-red-400 hover:text-red-300 transition text-right">
-                  Desactivar
-                </button>
-              </div>
+              {isAdmin && (
+                <div className="flex flex-col gap-1.5">
+                  <button onClick={() => { setModalStock(p); resetStock() }}
+                    className="text-xs bg-blue-800 hover:bg-blue-700 text-blue-200 px-3 py-1 rounded-lg transition">
+                    Ajustar stock
+                  </button>
+                  <button onClick={() => openEdit(p)}
+                    className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 px-3 py-1 rounded-lg transition">
+                    Editar
+                  </button>
+                  <button onClick={() => onDelete(p.producto_id)}
+                    className="text-xs text-red-400 hover:text-red-300 transition text-right">
+                    Desactivar
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ))}
